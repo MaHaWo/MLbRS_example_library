@@ -18,11 +18,6 @@ uv venv
 then
 
 ```bash
-uv install
-```
-
-or
-```bash
 uv pip install .
 ```
 
