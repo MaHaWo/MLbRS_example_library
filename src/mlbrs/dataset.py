@@ -7,6 +7,7 @@ from pathlib import Path
 
 from typing import Any, Callable
 from torchvision import transforms
+from datasets import load_from_disk
 
 
 class TorchDataset(Configurable, torch.utils.data.Dataset):
@@ -106,5 +107,102 @@ class TorchDataset(Configurable, torch.utils.data.Dataset):
             train=config.get("train", True),
             download=config.get("download", False),
             transform=config.get("transform", None),
+            size = config.get("size", None),
+        )
+
+
+class HFDataset(Configurable, torch.utils.data.Dataset):
+    """Huggingset dataset wrapper """
+
+    def __init__(
+        self,
+        dataset: str | Path | Any,
+        root: str | Path | None = None,
+        transform: Callable | None = None,
+        train: bool = True,
+        size: int | None = None,
+    ):
+        """Initialize the HFDataset.
+
+        Args:
+            dataset (str | Path | Any): The Huggingface dataset to wrap. Can be:
+                - A Path or string path to a locally saved dataset (uses load_from_disk)
+                - A Huggingface dataset object
+            root (str | Path, optional): Root directory for dataset operations. Defaults to None.
+            transform (Callable | list[Callable] | None, optional): Transform to apply to each sample. Defaults to None.
+            train (bool, optional): If True, use 'train' split; else use 'test' split. Defaults to True.
+            size (int | None, optional): If specified, limits the dataset to the first 'size' samples. Defaults to None.
+        """
+        if isinstance(dataset, (str, Path)):
+            root_path = Path(root).resolve().absolute()
+            self.hf_dataset = load_from_disk(root_path / Path(dataset))
+        else:
+            self.hf_dataset = dataset
+
+        # Only select train/test split if the dataset is a DatasetDict
+        if train: 
+            self.hf_dataset = self.hf_dataset["train"]
+        else:
+            self.hf_dataset = self.hf_dataset["test"]
+
+        if size is not None:
+            # Select a subset of the dataset
+            indices = list(range(min(size, len(self.hf_dataset))))
+            # Handle both HF datasets and list-based mock datasets
+            self.hf_dataset = self.hf_dataset.select(indices)
+
+        # Handle transform - can be a single Callable or list of strings
+        if transform and isinstance(transform, (list, tuple)):
+            if all(isinstance(t, str) for t in transform):
+                transform = [
+                    getattr(transforms, t)()
+                    for t in transform  # type: ignore
+                ]
+            self.transform = transforms.Compose(transform) if transform else None
+        else:
+            self.transform = transform
+
+    def __len__(self) -> int:
+        """Return the total number of samples in the dataset.
+
+        Returns:
+            int: Number of samples in the underlying Huggingface dataset.
+        """
+        return len(self.hf_dataset)
+
+    def __getitem__(self, idx: int) -> tuple[Any, Any]:
+        """Retrieve and process a single sample from the dataset.
+
+        Fetches the sample from the underlying Huggingface dataset and applies
+        the specified transform if provided.
+
+        Args:
+            idx (int): Index of the sample to retrieve.
+
+        Returns:
+            tuple[Any, Any]: Tuple of (transformed_sample, label).
+        """
+        sample = self.hf_dataset[idx]
+        data, label = sample["image"], sample["label"]
+        if self.transform:
+            data = self.transform(data)
+        return data, label
+    
+    @classmethod
+    def from_config(cls, config: dict[str, Any]) -> "HFDataset":
+        """Create a HFDataset instance from a configuration dictionary.
+
+        Args:
+            config (dict): Configuration dictionary containing parameters for the HFDataset.
+                Must include 'hf_dataset' key with a path or dataset object.
+                Optionally includes 'transform' key.
+        Returns:
+            HFDataset: An instance of the HFDataset class created from the configuration.
+        """
+        return cls(
+            root = config["root"],
+            dataset=config["dataset"],
+            transform=config.get("transform", None),
+            train=config.get("train", True),
             size = config.get("size", None),
         )

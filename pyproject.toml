@@ -5,6 +5,7 @@ description = "Example library for machine-learning-based-research-software"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "datasets>=4.5.0",
     "huggingface>=0.0.1",
     "pyyaml>=6.0.3",
     "scikit-learn>=1.8.0",
