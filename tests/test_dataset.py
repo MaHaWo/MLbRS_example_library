@@ -1,8 +1,7 @@
-import pytest
 import torch
 from pathlib import Path
 from torchvision import transforms
-from mlbrs.dataset import Dataset
+from mlbrs.dataset import TorchDataset
 import numpy as np
 
 class mock_target_dataset(torch.utils.data.Dataset):
@@ -18,45 +17,45 @@ class mock_target_dataset(torch.utils.data.Dataset):
 
 def test_dataset_init():
     """Test that initialization stores parameters correctly."""
-    dataset = Dataset(
+    torchdataset = TorchDataset(
         root="/tmp/data",
         target_dataset=mock_target_dataset,
         train=False,
         download=True,
     )
-    assert dataset.root == Path("/tmp/data")
-    assert dataset.train is False
-    assert dataset.download is True
+    assert torchdataset.root == Path("/tmp/data")
+    assert torchdataset.train is False
+    assert torchdataset.download is True
 
 
 def test_dataset_len():
     """Test __len__ returns correct length."""
-    dataset = Dataset(
+    torchdataset = TorchDataset(
         root="/tmp/data",
         target_dataset=mock_target_dataset,
     )
-    assert len(dataset) == 10
+    assert len(torchdataset) == 10
 
 
 def test_dataset_getitem_returns_data():
     """Test __getitem__ returns image and label tuple."""
-    dataset = Dataset(
+    torchdataset = TorchDataset(
         root="/tmp/data",
         target_dataset=mock_target_dataset,
     )
-    image, label = dataset[0]
+    image, label = torchdataset[0]
     assert isinstance(image, np.ndarray)
     assert isinstance(label, int)
 
 
 def test_dataset_getitem_without_transform():
     """Test __getitem__ without transform returns raw data."""
-    dataset = Dataset(
+    torchdataset = TorchDataset(
         root="/tmp/data",
         target_dataset=mock_target_dataset,
         transform=None,
     )
-    image, label = dataset[0]
+    image, label = torchdataset[0]
     assert image.shape == (1, 28, 28)
     assert label == 0
 
@@ -65,13 +64,13 @@ def test_dataset_transform_applied_when_present():
     """Test that transform is applied to data."""
 
     transform_list = [transforms.ToTensor()]
-    dataset = Dataset(
+    torchdataset = TorchDataset(
         root="/tmp/data",
         target_dataset=mock_target_dataset,
         transform=transform_list,
     )
 
-    image, label = dataset[0]
+    image, label = torchdataset[0]
     assert isinstance(image, torch.Tensor)
     assert label == 0
 
@@ -86,7 +85,7 @@ def test_dataset_from_config_all_parameters():
         "download": True,
         "transform": transform_list,
     }
-    dataset = Dataset.from_config(config)
-    assert dataset.train is False
-    assert dataset.download is True
-    assert dataset.transform is not None
+    torchdataset = TorchDataset.from_config(config)
+    assert torchdataset.train is False
+    assert torchdataset.download is True
+    assert torchdataset.transform is not None

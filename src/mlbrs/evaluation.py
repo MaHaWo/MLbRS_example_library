@@ -5,15 +5,15 @@ from torch.utils.data import DataLoader
 
 def evaluate_f1_score(
     model: torch.nn.Module,
-    dataset: torch.utils.data.Dataset,
+    torchdataset: torch.utils.data.Dataset,
     batch_size: int = 32,
     device: str = "cpu",
 ) -> float:
-    """Compute F1 score on a dataset.
+    """Compute F1 score on a torchdataset.
 
     Args:
         model: The trained model to evaluate.
-        dataset: The test dataset to evaluate on.
+        torchdataset: The test torchdataset to evaluate on.
         batch_size: Batch size for evaluation.
         device: Device to run evaluation on ('cpu' or 'cuda').
 
@@ -23,7 +23,7 @@ def evaluate_f1_score(
     model.eval()
     model.to(device)
 
-    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+    dataloader = DataLoader(torchdataset, batch_size=batch_size, shuffle=False)
 
     all_preds = []
     all_labels = []

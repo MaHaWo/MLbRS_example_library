@@ -31,10 +31,10 @@ class ToyDataset(torch.utils.data.Dataset):
 def test_evaluate_f1_score():
     """Test that evaluate_f1_score computes F1 score."""
     model = SimpleModel()
-    dataset = ToyDataset(num_samples=4)
+    torchdataset = ToyDataset(num_samples=4)
 
     # Model should produce reasonable output
-    f1 = evaluate_f1_score(model, dataset, batch_size=2)
+    f1 = evaluate_f1_score(model, torchdataset, batch_size=2)
 
     # F1 should be between 0 and 1
     assert np.isclose(f1, 0.33, atol= 0.01)

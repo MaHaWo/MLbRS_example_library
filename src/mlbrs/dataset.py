@@ -9,11 +9,11 @@ from typing import Any, Callable
 from torchvision import transforms
 
 
-class Dataset(Configurable, torch.utils.data.Dataset):
-    """Custom wrapper dataset that composes a target PyTorch dataset with sequential transforms.
+class TorchDataset(Configurable, torch.utils.data.Dataset):
+    """Custom wrapper torchdataset that composes a target PyTorch torchdataset with sequential transforms.
 
     Inherits from both Configurable and torch.utils.data.Dataset to provide
-    a flexible, configurable dataset that wraps existing PyTorch datasets
+    a flexible, configurable torchdataset that wraps existing PyTorch datasets
     (e.g., MNIST, CIFAR10) and applies a chain of transforms.
     """
 
@@ -26,15 +26,15 @@ class Dataset(Configurable, torch.utils.data.Dataset):
         transform: list[Callable] | list[str] | None = None,
         size= None,
     ):
-        """Initialize the Dataset.
+        """Initialize the TorchDataset.
 
         Args:
-            root (str | Path): Root directory where the dataset is stored or will be downloaded to.
-            target_dataset (type[torch.utils.data.Dataset]): The PyTorch dataset class to use (e.g., torchvision.datasets.MNIST).
+            root (str | Path): Root directory where the torchdataset is stored or will be downloaded to.
+            target_dataset (type[torch.utils.data.Dataset]): The PyTorch torchdataset class to use (e.g., torchvision.datasets.MNIST).
             train (bool, optional): If True, load the training split; else load the test split. Defaults to True.
-            download (bool, optional): If True, download the dataset if not found at root. Defaults to False.
+            download (bool, optional): If True, download the torchdataset if not found at root. Defaults to False.
             transform (list[Callable] | None, optional): List of transforms to apply sequentially to each sample. Defaults to None.
-            size (int | None, optional): If specified, limits the dataset to the first 'size' samples. Defaults to None.
+            size (int | None, optional): If specified, limits the torchdataset to the first 'size' samples. Defaults to None.
         """
         self.root = Path(root)
         self.train = train
@@ -65,17 +65,17 @@ class Dataset(Configurable, torch.utils.data.Dataset):
                                                  torch.randperm(len(self._data))[:size])
 
     def __len__(self) -> int:
-        """Return the total number of samples in the dataset.
+        """Return the total number of samples in the torchdataset.
 
         Returns:
-            int: Number of samples in the underlying dataset.
+            int: Number of samples in the underlying torchdataset.
         """
         return len(self._data)
 
     def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
-        """Retrieve and process a single sample from the dataset.
+        """Retrieve and process a single sample from the torchdataset.
 
-        Fetches the sample from the underlying dataset and applies all
+        Fetches the sample from the underlying torchdataset and applies all
         transforms in the order they were specified.
 
         Args:
@@ -91,14 +91,14 @@ class Dataset(Configurable, torch.utils.data.Dataset):
         return image, label
 
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "Dataset":
-        """Create a Dataset instance from a configuration dictionary.
+    def from_config(cls, config: dict[str, Any]) -> "TorchDataset":
+        """Create a TorchDataset instance from a configuration dictionary.
 
         Args:
-            config (dict): Configuration dictionary containing parameters for the Dataset.
+            config (dict): Configuration dictionary containing parameters for the TorchDataset.
 
         Returns:
-            Dataset: An instance of the Dataset class created from the configuration.
+            TorchDataset: An instance of the TorchDataset class created from the configuration.
         """
         return cls(
             root=config["root"],
