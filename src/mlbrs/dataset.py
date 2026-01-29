@@ -1,4 +1,5 @@
 import torch
+import torchvision
 
 from .configurable import Configurable
 
@@ -19,10 +20,11 @@ class Dataset(Configurable, torch.utils.data.Dataset):
     def __init__(
         self,
         root: str | Path,
-        target_dataset: type[torch.utils.data.Dataset],
+        target_dataset: type[torch.utils.data.Dataset] | str,
         train: bool = True,
         download: bool = False,
-        transform: list[Callable] | None = None,
+        transform: list[Callable] | list[str] | None = None,
+        size= None,
     ):
         """Initialize the Dataset.
 
@@ -32,12 +34,23 @@ class Dataset(Configurable, torch.utils.data.Dataset):
             train (bool, optional): If True, load the training split; else load the test split. Defaults to True.
             download (bool, optional): If True, download the dataset if not found at root. Defaults to False.
             transform (list[Callable] | None, optional): List of transforms to apply sequentially to each sample. Defaults to None.
+            size (int | None, optional): If specified, limits the dataset to the first 'size' samples. Defaults to None.
         """
         self.root = Path(root)
         self.train = train
         self.target_dataset = target_dataset
         self.download = download
+
+        if transform and all(isinstance(t, str) for t in transform):
+            transform = [
+                getattr(transforms, t)()
+                for t in transform  # type: ignore
+            ]
+
         self.transform = transforms.Compose(transform) if transform else None
+
+        if isinstance(target_dataset, str):
+            target_dataset = getattr(torchvision.datasets, target_dataset)
 
         self._data = target_dataset(
             root=self.root,
@@ -45,6 +58,11 @@ class Dataset(Configurable, torch.utils.data.Dataset):
             download=self.download,
             transform=None,
         )
+
+        if size is not None:
+            # randomly select subset of data
+            self._data = torch.utils.data.Subset(self._data,
+                                                 torch.randperm(len(self._data))[:size])
 
     def __len__(self) -> int:
         """Return the total number of samples in the dataset.
@@ -67,7 +85,6 @@ class Dataset(Configurable, torch.utils.data.Dataset):
             tuple[torch.Tensor, int]: Tuple of (transformed_image, label).
         """
         image, label = self._data[idx]
-
         if self.transform:
             image = self.transform(image)
 
@@ -89,4 +106,5 @@ class Dataset(Configurable, torch.utils.data.Dataset):
             train=config.get("train", True),
             download=config.get("download", False),
             transform=config.get("transform", None),
+            size = config.get("size", None),
         )
