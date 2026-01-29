@@ -1,0 +1,20 @@
+[project]
+name = "mlbrs"
+version = "0.1.0"
+description = "Example library for machine-learning-based-research-software"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface>=0.0.1",
+    "pyyaml>=6.0.3",
+    "torch>=2.10.0",
+    "torchvision>=0.25.0",
+]
+
+[project.optional-dependencies]
+dev=["pytest"]
+
+[dependency-groups]
+dev = [
+    "pytest-cov>=7.0.0",
+]
