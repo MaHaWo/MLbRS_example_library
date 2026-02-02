@@ -4,11 +4,10 @@ import torchvision
 from .configurable import Configurable
 
 from pathlib import Path
+import random
 
 from typing import Any, Callable
-from torchvision import transforms
 from datasets import load_from_disk
-
 
 class TorchDataset(Configurable, torch.utils.data.Dataset):
     """Custom wrapper torchdataset that composes a target PyTorch torchdataset with sequential transforms.
@@ -44,11 +43,11 @@ class TorchDataset(Configurable, torch.utils.data.Dataset):
 
         if transform and all(isinstance(t, str) for t in transform):
             transform = [
-                getattr(transforms, t)()
+                getattr(torchvision.transforms, t)()
                 for t in transform  # type: ignore
             ]
 
-        self.transform = transforms.Compose(transform) if transform else None
+        self.transform = torchvision.transforms.Compose(transform) if transform else None
 
         if isinstance(target_dataset, str):
             target_dataset = getattr(torchvision.datasets, target_dataset)
@@ -111,54 +110,44 @@ class TorchDataset(Configurable, torch.utils.data.Dataset):
         )
 
 
-class HFDataset(Configurable, torch.utils.data.Dataset):
-    """Huggingset dataset wrapper """
+class Dataset(Configurable, torch.utils.data.Dataset):
+    """dataset wrapper reading .pt files from disk."""
 
     def __init__(
         self,
-        dataset: str | Path | Any,
-        root: str | Path | None = None,
+        path: str | Path | None = None,
         transform: Callable | None = None,
-        train: bool = True,
         size: int | None = None,
+        shuffle: bool = True,
     ):
-        """Initialize the HFDataset.
+        """Initialize a basic dataset that reads .pt files from disk.
 
         Args:
-            dataset (str | Path | Any): The Huggingface dataset to wrap. Can be:
-                - A Path or string path to a locally saved dataset (uses load_from_disk)
-                - A Huggingface dataset object
-            root (str | Path, optional): Root directory for dataset operations. Defaults to None.
+            path (str | Path | None, optional): Path to directory containing .pt files. Defaults to None.
             transform (Callable | list[Callable] | None, optional): Transform to apply to each sample. Defaults to None.
-            train (bool, optional): If True, use 'train' split; else use 'test' split. Defaults to True.
             size (int | None, optional): If specified, limits the dataset to the first 'size' samples. Defaults to None.
+            shuffle (bool, optional): If True, shuffle the dataset samples. Defaults to True.
         """
-        if isinstance(dataset, (str, Path)):
-            root_path = Path(root).resolve().absolute()
-            self.hf_dataset = load_from_disk(root_path / Path(dataset))
-        else:
-            self.hf_dataset = dataset
-
-        # Only select train/test split if the dataset is a DatasetDict
-        if train: 
-            self.hf_dataset = self.hf_dataset["train"]
-        else:
-            self.hf_dataset = self.hf_dataset["test"]
+        if isinstance(path, (str, Path)):
+            root_path = Path(path).resolve().absolute()
+            self.file_paths = sorted(root_path.glob("*.pt"))
+            self.num_samples = len(self.file_paths)
 
         if size is not None:
-            # Select a subset of the dataset
-            indices = list(range(min(size, len(self.hf_dataset))))
-            # Handle both HF datasets and list-based mock datasets
-            self.hf_dataset = self.hf_dataset.select(indices)
+            self.num_samples = min(size, self.num_samples)
+
+        self.indices = list(range(self.num_samples))
+        if shuffle:
+            random.shuffle(self.indices)
 
         # Handle transform - can be a single Callable or list of strings
         if transform and isinstance(transform, (list, tuple)):
             if all(isinstance(t, str) for t in transform):
                 transform = [
-                    getattr(transforms, t)()
+                    getattr(torchvision.transforms, t)()
                     for t in transform  # type: ignore
                 ]
-            self.transform = transforms.Compose(transform) if transform else None
+            self.transform = torchvision.transforms.Compose(transform) if transform else None
         else:
             self.transform = transform
 
@@ -168,7 +157,7 @@ class HFDataset(Configurable, torch.utils.data.Dataset):
         Returns:
             int: Number of samples in the underlying Huggingface dataset.
         """
-        return len(self.hf_dataset)
+        return self.num_samples
 
     def __getitem__(self, idx: int) -> tuple[Any, Any]:
         """Retrieve and process a single sample from the dataset.
@@ -182,27 +171,27 @@ class HFDataset(Configurable, torch.utils.data.Dataset):
         Returns:
             tuple[Any, Any]: Tuple of (transformed_sample, label).
         """
-        sample = self.hf_dataset[idx]
+        sample = torch.load(self.file_paths[self.indices[idx]])
         data, label = sample["image"], sample["label"]
         if self.transform:
             data = self.transform(data)
         return data, label
-    
+
     @classmethod
-    def from_config(cls, config: dict[str, Any]) -> "HFDataset":
-        """Create a HFDataset instance from a configuration dictionary.
+    def from_config(cls, config: dict[str, Any]) -> "Dataset":
+        """Create a Dataset instance from a configuration dictionary.
 
         Args:
-            config (dict): Configuration dictionary containing parameters for the HFDataset.
+            config (dict): Configuration dictionary containing parameters for the Dataset.
                 Must include 'hf_dataset' key with a path or dataset object.
                 Optionally includes 'transform' key.
         Returns:
-            HFDataset: An instance of the HFDataset class created from the configuration.
+            Dataset: An instance of the Dataset class created from the configuration.
         """
+
         return cls(
-            root = config["root"],
-            dataset=config["dataset"],
-            transform=config.get("transform", None),
-            train=config.get("train", True),
+            path = config["path"],
+            transform=config["transform"],
+            shuffle=config.get("shuffle", True),
             size = config.get("size", None),
         )
