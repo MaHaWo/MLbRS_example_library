@@ -116,7 +116,7 @@ class Dataset(Configurable, torch.utils.data.Dataset):
     def __init__(
         self,
         path: str | Path | None = None,
-        transform: Callable | None = None,
+        transform: list[str] | None = None,
         size: int | None = None,
         shuffle: bool = True,
     ):
@@ -142,11 +142,10 @@ class Dataset(Configurable, torch.utils.data.Dataset):
 
         # Handle transform - can be a single Callable or list of strings
         if transform and isinstance(transform, (list, tuple)):
-            if all(isinstance(t, str) for t in transform):
-                transform = [
-                    getattr(torchvision.transforms, t)()
-                    for t in transform  # type: ignore
-                ]
+            transform = [
+                getattr(torchvision.transforms, t)()
+                for t in transform  # type: ignore
+            ]
             self.transform = torchvision.transforms.Compose(transform) if transform else None
         else:
             self.transform = transform
@@ -171,7 +170,7 @@ class Dataset(Configurable, torch.utils.data.Dataset):
         Returns:
             tuple[Any, Any]: Tuple of (transformed_sample, label).
         """
-        sample = torch.load(self.file_paths[self.indices[idx]])
+        sample = torch.load(self.file_paths[self.indices[idx]], weights_only=False)
         data, label = sample["image"], sample["label"]
         if self.transform:
             data = self.transform(data)

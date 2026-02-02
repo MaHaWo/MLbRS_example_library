@@ -1,9 +1,9 @@
-from .dataset import TorchDataset,HFDataset
+from .dataset import TorchDataset,Dataset
 from .evaluation import evaluate_f1_score
 from .model import Model
 
 __all__ = [
     "TorchDataset",
-    "HFDataset",
+    "Dataset",
     "Model",
     "evaluate_f1_score",]
