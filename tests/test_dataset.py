@@ -1,7 +1,8 @@
+import pytest
 import torch
 from pathlib import Path
 from torchvision import transforms
-from mlbrs.dataset import TorchDataset, HFDataset
+from mlbrs.dataset import TorchDataset, Dataset
 import numpy as np
 from PIL import Image
 
@@ -15,38 +16,15 @@ class mock_target_dataset(torch.utils.data.Dataset  ):
     def __getitem__(self, idx):
         return self.data[idx]
 
-class mock_hf_dataset_split:
-    """Mock HF dataset split with select method."""
-    def __init__(self, data):
-        self.data = data
-    
-    def __len__(self):
-        return len(self.data)
-    
-    def __getitem__(self, idx):
-        return self.data[idx]
-    
-    def select(self, indices):
-        """Select subset of data like HF datasets."""
-        selected_data = [self.data[i] for i in indices]
-        return mock_hf_dataset_split(selected_data)
+@pytest.fixture
+def make_mock_data(tmp_path):
+    for i in range(10):
+        arr = Image.fromarray(np.random.randn(28, 28))
+        label = i%3 
+        torch.save({"image":arr, "label": label}, tmp_path / f"data_{i}.pt")
+    return tmp_path
 
-
-class mock_hf_dataset:
-    """Mock Hugging Face DatasetDict for testing."""
-    def __init__(self):
-        all_data = [
-            {"image": Image.new("L", (28, 28)), "label": i} for i in range(10)
-        ]
-        self.splits = {
-            "train": mock_hf_dataset_split(all_data),
-            "test": mock_hf_dataset_split(all_data[8:])
-        }
-
-    def __getitem__(self, split_name):
-        return self.splits[split_name]
-
-def test_dataset_init():
+def test_torchdataset_init():
     """Test that initialization stores parameters correctly."""
     torchdataset = TorchDataset(
         root="/tmp/data",
@@ -54,12 +32,12 @@ def test_dataset_init():
         train=False,
         download=True,
     )
-    assert torchdataset.root == Path("/tmp/data")
+    assert torchdataset.path == Path("/tmp/data")
     assert torchdataset.train is False
     assert torchdataset.download is True
 
 
-def test_dataset_len():
+def test_torchdataset_len():
     """Test __len__ returns correct length."""
     torchdataset = TorchDataset(
         root="/tmp/data",
@@ -68,7 +46,7 @@ def test_dataset_len():
     assert len(torchdataset) == 10
 
 
-def test_dataset_getitem_returns_data():
+def test_torchdataset_getitem_returns_data():
     """Test __getitem__ returns image and label tuple."""
     torchdataset = TorchDataset(
         root="/tmp/data",
@@ -79,7 +57,7 @@ def test_dataset_getitem_returns_data():
     assert isinstance(label, int)
 
 
-def test_dataset_getitem_without_transform():
+def test_torchdataset_getitem_without_transform():
     """Test __getitem__ without transform returns raw data."""
     torchdataset = TorchDataset(
         root="/tmp/data",
@@ -90,23 +68,35 @@ def test_dataset_getitem_without_transform():
     assert image.shape == (1, 28, 28)
     assert label == 0
 
-
-def test_dataset_transform_applied_when_present():
-    """Test that transform is applied to data."""
-
-    transform_list = [transforms.ToTensor()]
+def test_torchdataset_getitem_with_shuffle():
+    """Test __getitem__ without transform returns raw data."""
     torchdataset = TorchDataset(
         root="/tmp/data",
         target_dataset=mock_target_dataset,
-        transform=transform_list,
+        transform=None,
+        shuffle=True,
     )
+    image, label = torchdataset[3]
+    assert image.shape == (1, 28, 28)
+    assert label != 3
 
+
+
+def test_torchdataset_transform_applied_when_present():
+    """Test that transform is applied to data."""
+
+    torchdataset = TorchDataset(
+        root="/tmp/data",
+        target_dataset=mock_target_dataset,
+        transform= [transforms.ToTensor(),],
+    )
+    
     image, label = torchdataset[0]
     assert isinstance(image, torch.Tensor)
     assert label == 0
 
 
-def test_dataset_from_config_all_parameters():
+def test_torchdataset_from_config_all_parameters():
     """Test from_config with all parameters."""
     transform_list = [transforms.ToTensor()]
     config = {
@@ -122,79 +112,77 @@ def test_dataset_from_config_all_parameters():
     assert torchdataset.transform is not None
 
 
-# HFDataset Tests
+# Dataset Tests
 
 
-def test_hf_dataset_init():
-    """Test that HFDataset initialization stores parameters correctly."""
-    mock_ds = mock_hf_dataset()
-    hf_dataset = HFDataset(dataset=mock_ds, transform=None)
-    assert len(hf_dataset.hf_dataset) == 10
-    assert hf_dataset.transform is None
+def test_dataset_init(make_mock_data):
+    """Test that Dataset initialization stores parameters correctly."""
+    tmp_dir = make_mock_data
+    dataset = Dataset(path=tmp_dir, transform=None)
+    assert len(dataset) == 10
+    assert dataset.transform is None
 
+def test_dataset_init_with_size(make_mock_data):
+    """Test that Dataset initialization stores parameters correctly."""
+    tmp_dir = make_mock_data
+    dataset = Dataset(path=tmp_dir, transform=None, size = 4)
+    assert len(dataset) == 4
+    assert dataset.transform is None
 
-def test_hf_dataset_len():
-    """Test __len__ returns correct length for HFDataset."""
-    mock_ds = mock_hf_dataset()
-    hf_dataset = HFDataset(dataset=mock_ds)
-    assert len(hf_dataset) == 10
-
-
-def test_hf_dataset_getitem_without_transform():
-    """Test __getitem__ without transform returns raw data."""
-    mock_ds = mock_hf_dataset()
-    hf_dataset = HFDataset(dataset=mock_ds, transform=None)
-    image, label = hf_dataset[0]
+def test_dataset_get(make_mock_data):
+    """Test __getitem__ returns image and label tuple."""
+    tmp_dir = make_mock_data
+    dataset = Dataset(path=tmp_dir, transform=None)
+    image, label = dataset[0]
     assert isinstance(image, Image.Image)
-    assert label == 0
+    assert isinstance(label, int)
+    assert image.size == (28, 28)
 
 
-def test_hf_dataset_getitem_with_transform():
-    """Test that transform is applied to HFDataset data."""
-    mock_ds = mock_hf_dataset()
-    transform = transforms.ToTensor()
-    hf_dataset = HFDataset(dataset=mock_ds, transform=transform)
-    
-    image, label = hf_dataset[0]
-    assert isinstance(image, torch.Tensor)
-    assert label == 0
-    assert image.shape == (1, 28, 28)
+def test_dataset_get_with_transform(make_mock_data):
+    """Test __getitem__ returns image and label tuple."""
+    tmp_dir = make_mock_data
+    dataset = Dataset(path=tmp_dir, transform=[transforms.Resize((14,14)),])
+    image, label = dataset[0]
+    assert isinstance(image, Image.Image)
+    assert isinstance(label, int)
+    assert image.size == (14, 14)
 
-
-def test_hf_dataset_getitem_returns_correct_index():
+def test_dataset_getitem_returns_correct_index(make_mock_data):
     """Test __getitem__ returns correct sample for given index."""
-    mock_ds = mock_hf_dataset()
-    hf_dataset = HFDataset(dataset=mock_ds)
-    
+    tmp_dir = make_mock_data
+    dataset = Dataset(path=tmp_dir, transform=[transforms.Resize((14,14)),],shuffle = False)
     for i in range(5):
-        _, label = hf_dataset[i]
-        assert label == i
+        _, label = dataset[i]
+        assert label == i % 3
 
+def test_shuffled_dataset_getitem_returns_randomized_index(make_mock_data):
+    """Test __getitem__ returns correct sample for given index."""
+    tmp_dir = make_mock_data
+    dataset = Dataset(path=tmp_dir, transform=[transforms.Resize((14,14)),], shuffle = False)
+    idxs = []
+    for i in range(5):
+        _, label = dataset[i]
+        idxs.append(label)
+    assert idxs != list(range(5))
 
-def test_hf_dataset_from_config():
-    """Test HFDataset.from_config with dataset object."""
-    mock_ds = mock_hf_dataset()
+def test_dataset_from_config(make_mock_data):
+    """Test Dataset.from_config with dataset object."""
+    tmp_dir = make_mock_data
+    mock_ds = Dataset(path=tmp_dir)
     config = {
-        "dataset": mock_ds,
-        "transform": transforms.ToTensor(),
-        "root": "/tmp",
-        "train": True,
+        "transform": ["ToTensor",],
+        "path": tmp_dir,
+        "shuffle": True,       
     }
-    hf_dataset = HFDataset.from_config(config)
-    assert len(hf_dataset) == 10
-    assert hf_dataset.transform is not None
+    dataset = Dataset.from_config(config)
+    assert len(dataset) == 10
+    assert dataset.transform is not None
 
 
-def test_hf_dataset_with_size_limit():
-    """Test HFDataset with size parameter limits dataset."""
-    mock_ds = mock_hf_dataset()
-    hf_dataset = HFDataset(dataset=mock_ds, size=5, root="/tmp")
-    assert len(hf_dataset) == 5
-
-
-def test_hf_dataset_with_size_larger_than_dataset():
-    """Test HFDataset with size larger than actual dataset returns full dataset."""
-    mock_ds = mock_hf_dataset()
-    hf_dataset = HFDataset(dataset=mock_ds, size=20, root="/tmp")
-    assert len(hf_dataset) == 10
+def test_dataset_with_size_larger_than_dataset(make_mock_data):
+    """Test Dataset with size larger than actual dataset returns full dataset."""
+    tmp_dir = make_mock_data
+    dataset = Dataset(path=tmp_dir, size=20)
+    assert len(dataset) == 10
 

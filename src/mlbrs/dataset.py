@@ -9,7 +9,45 @@ import random
 from typing import Any, Callable
 from datasets import load_from_disk
 
-class TorchDataset(Configurable, torch.utils.data.Dataset):
+
+class BaseDataset(Configurable, torch.utils.data.Dataset):
+
+    def __init__(self, path: str | Path, transform: list[Callable | str] | None = None, size: int | None = None, shuffle: bool = False):
+        """Base dataset class.
+
+        Args:
+            path (str | Path): Path to dataset.
+            transform (list[Callable] | None, optional): List of transform callables to apply. Defaults to None.
+        """
+        super().__init__()
+        self.path = Path(path)
+        self.transform = self._build_transforms(transform=transform)
+        self.size = size
+        self.shuffle = shuffle
+
+
+    def _build_transforms(self, transform: list[Callable | str] | None) -> Callable | None:
+        """Compose a list of transforms into a single transform callable.
+
+        Args:
+            transform (list[Callable] | None): List of transform callables to compose.
+
+        Returns:
+            Callable | None: Composed transform callable or None if no transforms provided.
+        """
+        transformlist = []
+        if transform:
+            for t in transform:
+                if isinstance(t, Callable):
+                    transformlist.append(t)
+                elif isinstance(t, str):
+                    transformlist.append(getattr(torchvision.transforms, t)())
+                else: 
+                    raise ValueError(f"Transform {t} is neither a callable nor a valid torchvision transform name.")
+
+        return torchvision.transforms.Compose(transformlist) if transformlist else None
+
+class TorchDataset(BaseDataset):
     """Custom wrapper torchdataset that composes a target PyTorch torchdataset with sequential transforms.
 
     Inherits from both Configurable and torch.utils.data.Dataset to provide
@@ -23,8 +61,9 @@ class TorchDataset(Configurable, torch.utils.data.Dataset):
         target_dataset: type[torch.utils.data.Dataset] | str,
         train: bool = True,
         download: bool = False,
-        transform: list[Callable] | list[str] | None = None,
-        size= None,
+        transform: list[Callable | str] | None = None,
+        size: int | None = None,
+        shuffle: bool = False,
     ):
         """Initialize the TorchDataset.
 
@@ -35,34 +74,29 @@ class TorchDataset(Configurable, torch.utils.data.Dataset):
             download (bool, optional): If True, download the torchdataset if not found at root. Defaults to False.
             transform (list[Callable] | None, optional): List of transforms to apply sequentially to each sample. Defaults to None.
             size (int | None, optional): If specified, limits the torchdataset to the first 'size' samples. Defaults to None.
+            shuffle (bool, optional): If True, shuffle the dataset samples. Defaults to False.
         """
-        self.root = Path(root)
+        super().__init__(path=root, transform=transform, size=size, shuffle = shuffle)
         self.train = train
         self.target_dataset = target_dataset
         self.download = download
-
-        if transform and all(isinstance(t, str) for t in transform):
-            transform = [
-                getattr(torchvision.transforms, t)()
-                for t in transform  # type: ignore
-            ]
-
-        self.transform = torchvision.transforms.Compose(transform) if transform else None
-
         if isinstance(target_dataset, str):
             target_dataset = getattr(torchvision.datasets, target_dataset)
 
         self._data = target_dataset(
-            root=self.root,
+            root=self.path,
             train=self.train,
-            download=self.download,
-            transform=None,
-        )
+            download=self.download)
 
         if size is not None:
             # randomly select subset of data
-            self._data = torch.utils.data.Subset(self._data,
-                                                 torch.randperm(len(self._data))[:size])
+            self._data = torch.utils.data.Subset(self._data, range(self.size))
+        
+        self.indices = list(range(len(self._data)))
+        if shuffle:
+            # shuffle the dataset
+            random.shuffle(self.indices)
+            self._data = torch.utils.data.Subset(self._data, self.indices)
 
     def __len__(self) -> int:
         """Return the total number of samples in the torchdataset.
@@ -84,8 +118,9 @@ class TorchDataset(Configurable, torch.utils.data.Dataset):
         Returns:
             tuple[torch.Tensor, int]: Tuple of (transformed_image, label).
         """
-        image, label = self._data[idx]
-        if self.transform:
+        image, label = self._data[self.indices[idx]]
+
+        if self.transform is not None:
             image = self.transform(image)
 
         return image, label
@@ -110,15 +145,15 @@ class TorchDataset(Configurable, torch.utils.data.Dataset):
         )
 
 
-class Dataset(Configurable, torch.utils.data.Dataset):
+class Dataset(BaseDataset):
     """dataset wrapper reading .pt files from disk."""
 
     def __init__(
         self,
         path: str | Path | None = None,
-        transform: list[str] | None = None,
+        transform: list[Callable | str] | None = None,
         size: int | None = None,
-        shuffle: bool = True,
+        shuffle: bool = False,
     ):
         """Initialize a basic dataset that reads .pt files from disk.
 
@@ -126,11 +161,12 @@ class Dataset(Configurable, torch.utils.data.Dataset):
             path (str | Path | None, optional): Path to directory containing .pt files. Defaults to None.
             transform (Callable | list[Callable] | None, optional): Transform to apply to each sample. Defaults to None.
             size (int | None, optional): If specified, limits the dataset to the first 'size' samples. Defaults to None.
-            shuffle (bool, optional): If True, shuffle the dataset samples. Defaults to True.
+            shuffle (bool, optional): If True, shuffle the dataset samples. Defaults to False.
         """
+
+        super().__init__(path=path, transform=transform, size=size, shuffle = shuffle)
         if isinstance(path, (str, Path)):
-            root_path = Path(path).resolve().absolute()
-            self.file_paths = sorted(root_path.glob("*.pt"))
+            self.file_paths = sorted(Path(self.path).resolve().absolute().glob("*.pt"))
             self.num_samples = len(self.file_paths)
 
         if size is not None:
@@ -139,16 +175,6 @@ class Dataset(Configurable, torch.utils.data.Dataset):
         self.indices = list(range(self.num_samples))
         if shuffle:
             random.shuffle(self.indices)
-
-        # Handle transform - can be a single Callable or list of strings
-        if transform and isinstance(transform, (list, tuple)):
-            transform = [
-                getattr(torchvision.transforms, t)()
-                for t in transform  # type: ignore
-            ]
-            self.transform = torchvision.transforms.Compose(transform) if transform else None
-        else:
-            self.transform = transform
 
     def __len__(self) -> int:
         """Return the total number of samples in the dataset.
@@ -172,7 +198,7 @@ class Dataset(Configurable, torch.utils.data.Dataset):
         """
         sample = torch.load(self.file_paths[self.indices[idx]], weights_only=False)
         data, label = sample["image"], sample["label"]
-        if self.transform:
+        if self.transform is not None: 
             data = self.transform(data)
         return data, label
 
