@@ -34,8 +34,17 @@ def test_evaluate_f1_score():
     torchdataset = ToyDataset(num_samples=4)
 
     # Model should produce reasonable output
-    f1 = evaluate_f1_score(model, torchdataset, batch_size=2)
+    mean_loss,  min_loss, max_loss, q25_loss, q75_loss,f1 = evaluate_f1_score(model, torchdataset, batch_size=2)
 
     # F1 should be between 0 and 1
     assert np.isclose(f1, 0.33, atol= 0.01)
+
+    # Loss statistics should be valid numbers
+    assert mean_loss >= 0
+    assert min_loss >= 0
+    assert max_loss >= 0
+    assert q25_loss >= 0
+    assert q75_loss >= 0
+    assert min_loss <= mean_loss <= max_loss
+    assert q25_loss <= mean_loss <= q75_loss
 
